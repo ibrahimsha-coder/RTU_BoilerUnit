@@ -3,13 +3,7 @@
 
 #include <stdbool.h>
 
-typedef enum LevelState
-{
-    LEVEL_EMPTY,
-    LEVEL_LOW,
-    LEVEL_HIGH,
-    LEVEL_INVALID
-} LevelState;
+#include "LevelSensorDefinitions.h"
 
 typedef struct LevelSensorHandler
 {

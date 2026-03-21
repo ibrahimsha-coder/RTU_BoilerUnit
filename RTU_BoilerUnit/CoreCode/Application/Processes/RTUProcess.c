@@ -1,9 +1,8 @@
-//
-// © 2025 BoatLoadMinds PVT LMT. All Rights Reserved.
-//
 
 #include "OS.h"
 #include "esp_timer.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 #include "RTUProcess.h"
 #include "DebugMessage.h"
@@ -19,19 +18,17 @@ static int levelErrorCount = 0;
 static int tempErrorCount  = 0;
 
 static int currentError = ERROR_NONE;
-/* ===================== */
-
-/* ================= PROTOTYPES ================= */
 
 static bool Init(void);
-static void RTUApplication_task(void *pvParameters);
-
 static BoilerState HandleBoiler(BoilerState state, BoilerSensors *s, int *errorCode);
+static void StoreToFlash(const FlashRecord *rec);
+static void SendStoredData(void);
 static const char* GetErrorString(int error);
+static void RTUApplication_task(void *pvParameters);
 
 static RTCProcessHandler rtuHandler =
 {
-    .Init = Init
+    Init
 };
 
 RTCProcessHandler *CreateRTUProcess(WifiHandler *wifiHandlerObject, CloudServiceHandler *cloudHandlerObject, BoilerUnitHandler *boilerObject)
@@ -51,29 +48,19 @@ RTCProcessHandler *CreateRTUProcess(WifiHandler *wifiHandlerObject, CloudService
 static bool Init(void)
 {
     ESP_LOGI(TAG, "RTU Init");
+
+    if (nvs_flash_init() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "NVS Init Failed");
+        return false;
+    }
+
     return true;
 }
 
 static BoilerState HandleBoiler(BoilerState state, BoilerSensors *sensor, int *errorCode)
 {
-    /* ===== FIX ADDED ===== */
     float pressure_psi = sensor->pressure * KPA_TO_PSI;
-    /* ===================== */
-
-    if (sensor->level < 0)
-    {
-        levelErrorCount++;
-
-        if (levelErrorCount >= ERROR_COUNT)
-        {
-            currentError = ERROR_LEVEL_SENSOR;
-            return BOILER_ERROR;
-        }
-    }
-    else
-    {
-        levelErrorCount = 0;
-    }
 
     if (sensor->pressure == INVALID_PRESSURE || sensor->pressure == OVER_PRESSURE)
     {
@@ -81,37 +68,10 @@ static BoilerState HandleBoiler(BoilerState state, BoilerSensors *sensor, int *e
         return BOILER_ERROR;
     }
 
-    if (sensor->temperature > MAXIMUM_THRESHOLD_TEMPRATURE)
-    {
-        tempErrorCount++;
-
-        if (tempErrorCount >= ERROR_COUNT)
-        {
-            currentError = ERROR_TEMPERATURE_SENSOR;
-            return BOILER_ERROR;
-        }
-    }
-    else
-    {
-        tempErrorCount = 0;
-    }
-
     if (state == BOILER_IDLE)
     {
-        boiler->StopHeating();
-        boiler->StopWaterSupplyBoilerUnit();
-
-        /* ===== FIX ADDED ===== */
-        if (currentError != ERROR_NONE)
-        {
-            ESP_LOGI(TAG, "ERROR CLEARED");
-            currentError = ERROR_NONE;
-        }
-        /* ===================== */
-
         if (sensor->levelLow)
         {
-            ESP_LOGW(TAG, "LOW LEVEL → FILLING");
             return BOILER_FILLING;
         }
 
@@ -121,26 +81,15 @@ static BoilerState HandleBoiler(BoilerState state, BoilerSensors *sensor, int *e
     else if (state == BOILER_FILLING)
     {
         boiler->PumpWaterBoilerUnit();
-        boiler->StopHeating();
 
         if (sensor->levelHigh)
         {
-            ESP_LOGI(TAG, "TANK FULL → HEATING");
             return BOILER_HEATING;
         }
     }
 
     else if (state == BOILER_HEATING)
     {
-        if (!sensor->levelLow)
-        {
-            currentError = ERROR_DRY_RUN;
-            return BOILER_ERROR;
-        }
-
-        boiler->StopWaterSupplyBoilerUnit();
-
-        /* ===== FIX UPDATED ===== */
         if (pressure_psi < MINIMUM_THRESHOLD_PRESSURE)
         {
             boiler->StartHeating();
@@ -149,19 +98,10 @@ static BoilerState HandleBoiler(BoilerState state, BoilerSensors *sensor, int *e
         {
             boiler->StopHeating();
         }
-        /* ======================= */
-
-        if (sensor->pressure > OVER_PRESSURE)
-        {
-            currentError = ERROR_PRESSURE_SENSOR;
-            return BOILER_ERROR;
-        }
     }
 
     else if (state == BOILER_READY)
     {
-        boiler->StopHeating();
-
         if (pressure_psi < MINIMUM_THRESHOLD_PRESSURE)
         {
             return BOILER_HEATING;
@@ -171,14 +111,73 @@ static BoilerState HandleBoiler(BoilerState state, BoilerSensors *sensor, int *e
     else if (state == BOILER_ERROR)
     {
         boiler->StopHeating();
-        boiler->StopWaterSupplyBoilerUnit();
-
-        ESP_LOGE(TAG, "PROCESS STOPPED DUE TO ERROR");
-
-        return BOILER_ERROR;
     }
 
     return state;
+}
+
+static void StoreToFlash(const FlashRecord *rec)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(FLASH_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    {
+        return;
+    }
+
+    int32_t index = 0;
+    nvs_get_i32(handle, FLASH_INDEX_KEY, &index);
+
+    char key[16];
+    snprintf(key, sizeof(key), "%s%ld", FLASH_RECORD_PREFIX, index);
+
+    if (nvs_set_blob(handle, key, rec, sizeof(FlashRecord)) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Stored in Flash [%ld]", index);
+    }
+
+    index = (index + 1) % FLASH_MAX_RECORDS;
+    nvs_set_i32(handle, FLASH_INDEX_KEY, index);
+
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+static void SendStoredData(void)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(FLASH_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+        return;
+
+    for (int i = 0; i < FLASH_MAX_RECORDS; i++)
+    {
+        char key[16];
+        snprintf(key, sizeof(key), "%s%d", FLASH_RECORD_PREFIX, i);
+
+        FlashRecord rec;
+        size_t size = sizeof(rec);
+
+        if (nvs_get_blob(handle, key, &rec, &size) == ESP_OK)
+        {
+            ESP_LOGI(TAG, "Sending Stored [%d]", i);
+
+            bool success = cloudHandler->SendData(rec.temperature, rec.pressure, rec.levelLow, rec.levelHigh, rec.heater, rec.pump, rec.state, rec.error);
+
+            if (success == true)
+            {
+                nvs_erase_key(handle, key);
+                ESP_LOGI(TAG, "Deleted [%d]", i);
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    nvs_commit(handle);
+    nvs_close(handle);
 }
 
 static const char* GetErrorString(int error)
@@ -211,8 +210,6 @@ static const char* GetErrorString(int error)
 
 void RTUApplication_task(void *pvParameters)
 {
-    srand(esp_timer_get_time());
-
     BoilerSensors sensors = {0};
     BoilerState state = BOILER_IDLE;
 
@@ -225,44 +222,56 @@ void RTUApplication_task(void *pvParameters)
         if (wifiHandler && wifiHandler->GetStatus() == WIFI_STATUS_CONNECTED)
         {
             cloudHandler->ReadCommand(&start);
-            if (start)
-            {
-                sensors.temperature = boiler->GetTemperature();
-                sensors.pressure    = boiler->GetPressure();
-                sensors.level       = boiler->GetLevel();
-
-                /* ===== FIX UPDATED ===== */
-                sensors.levelLow  = (sensors.level >= 1);
-                sensors.levelHigh = (sensors.level == 2);
-                /* ======================= */
-
-                /* ===== FIX UPDATED ===== */
-                state = HandleBoiler(state, &sensors, NULL);
-
-                int error = currentError;
-                /* ======================= */
-
-                int heater = (state == BOILER_HEATING) ? 1 : 0;
-                int pump   = (state == BOILER_FILLING) ? 1 : 0;
-
-                ESP_LOGI(TAG,"Temp: %.2f | Press: %.2f | Level: %.2f | Low:%d High:%d | Heater:%d Pump:%d | State:%d | Error:%d (%s)",
-                         sensors.temperature,
-                         sensors.pressure,
-                         sensors.level,
-                         sensors.levelLow,
-                         sensors.levelHigh,
-                         heater,
-                         pump,
-                         state,
-                         error,
-                         GetErrorString(error));
-
-                cloudHandler->SendData(sensors.temperature, sensors.pressure, sensors.levelLow, sensors.levelHigh, heater, pump, state, error);
-            }
         }
-        else
+
+        if (start)
         {
-            ESP_LOGW(TAG, "WiFi Not Connected");
+            sensors.temperature = boiler->GetTemperature();
+            sensors.pressure    = boiler->GetPressure();
+            sensors.level       = boiler->GetLevel();
+
+            sensors.levelLow  = (sensors.level >= 1);
+            sensors.levelHigh = (sensors.level == 2);
+
+            state = HandleBoiler(state, &sensors, NULL);
+
+            int error = currentError;
+
+            int heater = (state == BOILER_HEATING);
+            int pump   = (state == BOILER_FILLING);
+
+            FlashRecord rec =
+            {
+                sensors.temperature,
+                sensors.pressure,
+                sensors.levelLow,
+                sensors.levelHigh,
+                heater,
+                pump,
+                state,
+                error,
+                (uint32_t)(esp_timer_get_time() / 1000)
+            };
+
+            bool cloudSendDataFeedBack = false;
+
+            if (wifiHandler && wifiHandler->GetStatus() == WIFI_STATUS_CONNECTED)
+            {
+                cloudSendDataFeedBack = cloudHandler->SendData(rec.temperature, rec.pressure, rec.levelLow, rec.levelHigh, rec.heater, rec.pump, rec.state, rec.error);
+            }
+
+            if (cloudSendDataFeedBack == false)
+            {
+                ESP_LOGW(TAG, "Cloud Failed → Store in Flash");
+                StoreToFlash(&rec);
+            }
+            else
+            {
+                ESP_LOGI(TAG, "Cloud OK Send Stored Data");
+                SendStoredData();
+            }
+
+            ESP_LOGI(TAG,"Temp: %.2f | Press: %.2f | Level: %.2f | State:%d | Error:%s", rec.temperature, rec.pressure, sensors.level, rec.state, GetErrorString(rec.error));
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));

@@ -10,11 +10,11 @@ static const char *TAG = "LEVEL_SENSOR";
 
 static int internal_level = 0;  
 
-static LevelState GetLevelState(void);
+static LevelState GetLevelSensorValue(void);
 
 static LevelSensorHandler levelSensorHandler =
 {
-    GetLevelState
+    GetLevelSensorValue
 };
 
 LevelSensorHandler *CreateLevelSensor(void)
@@ -41,7 +41,7 @@ static void SimulateLevel(void)
     // else hold state
 }
 
-static LevelState GetLevelState(void)
+static LevelState GetLevelSensorValue(void)
 {
     SimulateLevel();
 
@@ -64,7 +64,7 @@ static LevelState GetLevelState(void)
         state = LEVEL_INVALID;
     }
 
-    ESP_LOGI(TAG, "Level State: %d", state);
+    // ESP_LOGI(TAG, "Level State: %d", state);
 
     return state;
 }

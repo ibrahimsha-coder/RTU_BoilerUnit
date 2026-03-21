@@ -111,13 +111,8 @@ static bool CreatePeripherals(void)
 
     if (espWifi != NULL)
     {
-        if (espWifi->Init() != WifiOk)
-        {
-            if (espWifi->Connect("SWEET_HOME", "9993763619") != WifiOk)
-            {
-                retVal = true;
-            }
-        }
+        
+       retVal = true;
     }
 
     return true;

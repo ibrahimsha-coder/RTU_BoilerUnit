@@ -6,12 +6,8 @@ static const char *TAG = "TEMP_SENSOR";
 
 static float GetTempratureSensorValue(void);
 
-/* ================= STATE ================= */
-
-static float currentTemp = 25.0f;   // initial temp
-static int direction = 1;           // 1 = heating, -1 = cooling
-
-/* ================= HANDLER ================= */
+static float currentTemp = 25.0f;
+static int direction = 1;
 
 static TempratureSensorHandler tempratureSensor =
 {
@@ -23,26 +19,22 @@ TempratureSensorHandler *CreateTempratureSensor(void)
     return &tempratureSensor;
 }
 
-/* ================= SIMULATION ================= */
-
 static float GetTempratureSensorValue(void)
 {
-    /* Simulate gradual change */
-    currentTemp += direction * (rand() % 3);  // slow variation
+    currentTemp += direction * (rand() % 3);
 
-    /* Clamp + reverse direction */
     if (currentTemp >= 110.0f)
     {
         currentTemp = 110.0f;
-        direction = -1;  // start cooling
+        direction = -1;  
     }
     else if (currentTemp <= 25.0f)
     {
         currentTemp = 25.0f;
-        direction = 1;   // start heating
+        direction = 1;
     }
 
-    ESP_LOGI(TAG, "Temperature: %.2f C", currentTemp);
+    // ESP_LOGI(TAG, "Temperature: %.2f C", currentTemp);
 
     return currentTemp;
 }

@@ -1,0 +1,12 @@
+#ifndef LEVEL_SENSOR_DEFINITION_H
+#define LEVEL_SENSOR_DEFINITION_H
+
+typedef enum LevelState
+{
+    LEVEL_EMPTY,
+    LEVEL_LOW,
+    LEVEL_HIGH,
+    LEVEL_INVALID
+} LevelState;
+
+#endif// LEVEL_SENSOR_DEFINITION_H

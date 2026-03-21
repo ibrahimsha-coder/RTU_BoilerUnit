@@ -13,8 +13,6 @@
 
 #include "cJSON.h"
 
-/* ================= CONFIG ================= */
-
 #define THINGSPEAK_API_KEY "6Y9LPBBT7G259TY8"
 #define TALKBACK_API_KEY   "8KPPYSG8AHE2ELAI"
 #define TALKBACK_ID        "56596"
@@ -22,15 +20,10 @@
 static const char *TAG = "CLOUD";
 static WifiHandler *wifiHandler = NULL;
 
-/* ================= FUNCTION DECL ================= */
-
 static bool Init(void);
-bool SendData(float temprature, float pressure, int levelLow, int levelHigh,
-              int heater, int pump, int state, int error);
+bool SendData(float temprature, float pressure, int levelLow, int levelHigh, int heater, int pump, int state, int error);
 static bool ReadCommand(bool *start);
 static void DeleteCommand(int command_id);
-
-/* ================= HANDLER ================= */
 
 static CloudServiceHandler cloudHandler =
 {
@@ -48,24 +41,22 @@ CloudServiceHandler* CreateCloudService(WifiHandler *wifiHandlerObject)
     return &cloudHandler;
 }
 
-/* ================= INIT ================= */
-
 static bool Init(void)
 {
-    ESP_LOGI(TAG, "Cloud Service Initialized");
+    // if (wifiHandler->Connect("SWEET_HOME", "9993763619") != WifiOk)
+    if (wifiHandler->Connect("Ibrahimsha", "12345678") != WifiOk)
+    {
+        ESP_LOGI(TAG, "Cloud Service Initialized");
+    }
     return true;
 }
-
-/* ================= SEND DATA ================= */
 
 bool SendData(float temprature, float pressure, int levelLow, int levelHigh,
               int heater, int pump, int state, int error)
 {
     char url[256];
 
-    snprintf(url, sizeof(url),
-        "http://api.thingspeak.com/update?api_key=%s&field1=%.2f&field2=%.2f&field3=%d&field4=%d&field5=%d&field6=%d&field7=%d&field8=%d",
-        THINGSPEAK_API_KEY,
+    snprintf(url, sizeof(url), "http://api.thingspeak.com/update?api_key=%s&field1=%.2f&field2=%.2f&field3=%d&field4=%d&field5=%d&field6=%d&field7=%d&field8=%d", THINGSPEAK_API_KEY,
         temprature, pressure,
         levelLow, levelHigh,
         heater, pump,
@@ -88,7 +79,7 @@ bool SendData(float temprature, float pressure, int levelLow, int levelHigh,
 
         if (status == 200)
         {
-            ESP_LOGI(TAG, "ThingSpeak update success");
+            //ESP_LOGI(TAG, "ThingSpeak update success");
             esp_http_client_cleanup(client);
             return true;
         }
@@ -106,15 +97,11 @@ bool SendData(float temprature, float pressure, int levelLow, int levelHigh,
     return false;
 }
 
-/* ================= READ COMMAND ================= */
-
 static bool ReadCommand(bool *start)
 {
     char url[128];
 
-    snprintf(url, sizeof(url),
-             "http://api.thingspeak.com/talkbacks/%s/commands.json?api_key=%s",
-             TALKBACK_ID, TALKBACK_API_KEY);
+    snprintf(url, sizeof(url), "http://api.thingspeak.com/talkbacks/%s/commands.json?api_key=%s", TALKBACK_ID, TALKBACK_API_KEY);
 
     esp_http_client_config_t config =
     {
@@ -124,8 +111,6 @@ static bool ReadCommand(bool *start)
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
-
-    ESP_LOGI(TAG, "Request URL: %s", url);
 
     esp_err_t err = esp_http_client_open(client, 0);
 
@@ -148,15 +133,11 @@ static bool ReadCommand(bool *start)
         return false;
     }
 
-    /* ==== READ RESPONSE ==== */
-
     char buffer[1024] = {0};
     int total_read = 0;
     int read_len;
 
-    while ((read_len = esp_http_client_read(client,
-                                            buffer + total_read,
-                                            sizeof(buffer) - total_read - 1)) > 0)
+    while ((read_len = esp_http_client_read(client, buffer + total_read, sizeof(buffer) - total_read - 1)) > 0)
     {
         total_read += read_len;
 
@@ -169,7 +150,7 @@ static bool ReadCommand(bool *start)
 
     buffer[total_read] = 0;
 
-    ESP_LOGI(TAG, "Response Length: %d", total_read);
+    // ESP_LOGI(TAG, "Response Length: %d", total_read);
 
     if (total_read == 0 || strlen(buffer) < 5)
     {
@@ -178,8 +159,6 @@ static bool ReadCommand(bool *start)
         esp_http_client_cleanup(client);
         return true;
     }
-
-    /* ==== PARSE JSON ==== */
 
     cJSON *json = cJSON_Parse(buffer);
 
@@ -213,8 +192,6 @@ static bool ReadCommand(bool *start)
 
     ESP_LOGI(TAG, "Processing %d commands", count);
 
-    /* ==== PROCESS ALL COMMANDS ==== */
-
     for (int i = 0; i < count; i++)
     {
         cJSON *item = cJSON_GetArrayItem(json, i);
@@ -232,8 +209,6 @@ static bool ReadCommand(bool *start)
         const char *command = cmd->valuestring;
 
         ESP_LOGI(TAG, "CMD ID: %d | CMD: %s", command_id, command);
-
-        /* ==== COMMAND HANDLING ==== */
 
         if (strcmp(command, "START") == 0)
         {
@@ -258,9 +233,7 @@ static bool ReadCommand(bool *start)
             ESP_LOGI("SYSTEM", "System restart initiated...");
 
             DeleteCommand(command_id);
-            // Optional: small delay to flush logs / HTTP
             vTaskDelay(pdMS_TO_TICKS(500));
-
             esp_restart();
             
         }
@@ -269,7 +242,6 @@ static bool ReadCommand(bool *start)
             ESP_LOGW(TAG, "Unknown command");
         }
 
-        /* ==== DELETE AFTER PROCESS ==== */
         DeleteCommand(command_id);
     }
 
@@ -280,15 +252,11 @@ static bool ReadCommand(bool *start)
     return true;
 }
 
-/* ================= DELETE COMMAND ================= */
-
 static void DeleteCommand(int command_id)
 {
     char url[128];
 
-    snprintf(url, sizeof(url),
-             "http://api.thingspeak.com/talkbacks/%s/commands/%d.json?api_key=%s",
-             TALKBACK_ID, command_id, TALKBACK_API_KEY);
+    snprintf(url, sizeof(url), "http://api.thingspeak.com/talkbacks/%s/commands/%d.json?api_key=%s", TALKBACK_ID, command_id, TALKBACK_API_KEY);
 
     esp_http_client_config_t config =
     {

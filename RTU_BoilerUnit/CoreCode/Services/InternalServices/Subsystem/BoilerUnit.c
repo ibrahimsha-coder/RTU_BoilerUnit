@@ -29,11 +29,7 @@ static BoilerUnitHandler boilerUnitHandler =
     StopHeating
 };
 
-BoilerUnitHandler *CreateBoilerUnit(TempratureSensorHandler *tempratureSensorObject,
-                                    PressureSensorHandler *pressureSensorObject,
-                                    LevelSensorHandler *levelSensorObject,
-                                    PumpHandler *pumpObject,
-                                    HeaterHandler *heaterObject)
+BoilerUnitHandler *CreateBoilerUnit(TempratureSensorHandler *tempratureSensorObject, PressureSensorHandler *pressureSensorObject, LevelSensorHandler *levelSensorObject, PumpHandler *pumpObject, HeaterHandler *heaterObject)
 {
     if (tempratureSensorObject != NULL && pressureSensorObject != NULL && levelSensorObject != NULL && pumpObject != NULL && heaterObject != NULL)
     {
@@ -54,18 +50,16 @@ static bool PumpWaterBoilerUnit(void)
         return false;
     }
 
-    float level = levelSensor->GetLevelSensorValue();
+      LevelState level = levelSensor->GetLevelSensorValue();
 
-    /* Safety: Tank Full */
-    if (level >= 95.0f)
+    if (level == LEVEL_HIGH)
     {
         ESP_LOGW(TAG, "Tank Full → Stopping Pump");
         pump->PumpOff();
         return false;
     }
 
-    /* Normal Filling */
-    ESP_LOGI(TAG, "Filling Boiler... Level: %.2f %%", level);
+    ESP_LOGI(TAG, "Filling Boiler... Level: %d", level);
 
     if (pump->PumpOn() == true)
     {
@@ -79,7 +73,9 @@ static bool PumpWaterBoilerUnit(void)
 static bool StopWaterSupplyBoilerUnit(void)
 {
     if (pump == NULL)
+    {
         return false;
+    }
 
     if (pump->PumpOff() == true)
     {
@@ -109,12 +105,14 @@ static float GetLevel(void)
 static bool StartHeating(void)
 {
     if (heater == NULL)
+    {
         return false;
+    }
 
-    float temp = tempratureSensor->GetTempratureSensorValue();
+    float temprature = GetPressure();
+    float pressure = GetPressure();
 
-    /* Safety: Over temperature */
-    if (temp > 100.0f)
+    if (temprature > 120.0f)
     {
         ESP_LOGE(TAG, "Over Temperature! Heater OFF");
         heater->HeaterOff();
@@ -129,7 +127,9 @@ static bool StartHeating(void)
 static bool StopHeating(void)
 {
     if (heater == NULL)
+    {
         return false;
+    }
 
     ESP_LOGI(TAG, "Heater OFF");
 
