@@ -216,7 +216,7 @@ void RTUApplication_task(void *pvParameters)
     BoilerSensors sensors = {0};
     BoilerState state = BOILER_IDLE;
 
-    bool start = true;
+    bool start = false;
 
     vTaskDelay(pdMS_TO_TICKS(5000));
 

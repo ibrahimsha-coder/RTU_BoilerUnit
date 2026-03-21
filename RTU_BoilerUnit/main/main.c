@@ -189,7 +189,7 @@ static bool CreateExternalServices(void)
 {
     bool retVal = false;
 
-    cloud = CreateCloudService();
+    cloud = CreateCloudService(espWifi);
 
     if (cloud != NULL)
     {
