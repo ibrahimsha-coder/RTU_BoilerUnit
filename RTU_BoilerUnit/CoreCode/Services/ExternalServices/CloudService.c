@@ -247,7 +247,6 @@ static bool ReadCommand(bool *start)
         }
         else if (strcmp(command, "OFF_WIFI") == 0)
         {
-             // esp_wifi_stop();
              DeleteCommand(command_id);
             if (wifiHandler->Disconnect() != NULL)
             {
