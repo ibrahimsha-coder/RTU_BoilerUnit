@@ -31,8 +31,9 @@ static bool CreateApplication(void);
 static bool CreatePeripherals(void);
 static bool CreatePlatform(void);
 static bool CreateSensorsAndDevices(void);
-static bool CreateSubSystems(void);
+static bool CreateInternalServices(void);
 static bool CreateExternalServices(void);
+static bool CreateSubSystems(void);
 static bool CreateProcess(void);
 
 void app_main()
@@ -73,10 +74,7 @@ static bool CreatePlatform()
 
     if (CreateSensorsAndDevices() != false)
     {
-        if (CreateSubSystems() == true)
-            {
-                retVal = true;
-            }
+        retVal = true;        
     }
     return retVal;
 }
@@ -85,10 +83,14 @@ static bool CreateServices(void)
 {
     bool retVal = false;
 
-    if (CreateExternalServices() != false)
+    if (CreateInternalServices() != false)
     {
-        retVal = true;
-    }    
+        if (CreateExternalServices() != false)
+        {
+            retVal = true;
+        }    
+    }
+
 
     return retVal;
 }
@@ -172,6 +174,19 @@ static bool CreateSubSystems(void)
 	
 	return retVal;
 }
+
+static bool CreateInternalServices(void)
+{
+    bool retVal = false;
+
+    if (CreateSubSystems() == true)
+    {
+        retVal = true;
+    }
+
+    return retVal;
+}
+
 
 static bool CreateExternalServices(void)
 {
