@@ -1,11 +1,34 @@
-ESP-IDF template app
-====================
+Remote Telemetry Unit (RTU) – ESP32-S3 (ESP-IDF)
+🚀 Overview
 
-This is a template application to be used with [Espressif IoT Development Framework](https://github.com/espressif/esp-idf).
+This project demonstrates a Remote Telemetry Unit (RTU) built using ESP32-S3 and ESP-IDF for monitoring and controlling a boiler system.
 
-Please check [ESP-IDF docs](https://docs.espressif.com/projects/esp-idf/en/latest/get-started/index.html) for getting started instructions.
+The system reads environmental parameters such as temperature, pressure, and water level, performs control logic for actuators (pump & heater), stores data locally during network failures, and transmits data to the cloud.
 
-*Code in this repository is in the Public Domain (or CC0 licensed, at your option.)
-Unless required by applicable law or agreed to in writing, this
-software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied.*
+🎯 Key Features
+✅ Real-time sensor monitoring
+✅ Boiler control logic (Pump & Heater automation)
+✅ Cloud integration (ThingSpeak)
+✅ Remote command handling (TalkBack)
+✅ Offline data storage using Flash (Circular Buffer)
+✅ Automatic data sync after reconnection
+✅ Layered firmware architecture
+✅ Fault-tolerant and scalable design
+⚙️ System Architecture
+
+
+🚧 Limitations / Improvements
+TalkBack requires manual command creation
+→ Can be replaced with custom backend (MQTT/REST API)
+Sensor values are currently simulated
+→ Real sensors will provide accurate calibrated data
+WiFi reconnection requires manual restart
+→ Can be improved with auto-reconnect logic
+Flash handling is inside RTU process
+→ Should be moved to MCAL/Service layer
+RTU state machine can be further refactored for readability
+🛠️ Setup Instructions
+🔧 Prerequisites
+ESP-IDF installed
+ESP32-S3 board
+ThingSpeak account
