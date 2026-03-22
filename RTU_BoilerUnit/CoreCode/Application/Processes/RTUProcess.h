@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "BoilerDefinition.h"
+
 #include "WifiHandler.h"
 #include "CloudServiceHandler.h"
 #include "BoilerUnitHandler.h"
@@ -16,7 +18,7 @@
 #define MAXIMUM_THRESHOLD_TEMPRATURE 120
 
 #define MINIMUM_THRESHOLD_PRESSURE 14
-#define MAXIMUM_THRESHOLD_PRESSURE 18
+#define MAXIMUM_THRESHOLD_PRESSURE 16
 
 #define KPA_TO_PSI 0.145038f
 
@@ -51,9 +53,9 @@ typedef struct BoilerSensors
 {
     float temperature;
     float pressure;
-    float level;
-    bool levelLow;
-    bool levelHigh;
+    LevelState level;
+    LevelState levelLow;
+    LevelState levelHigh;
 } BoilerSensors;
 
 typedef struct FlashRecord

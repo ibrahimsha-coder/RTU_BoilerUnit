@@ -10,13 +10,13 @@ static LevelSensorHandler *levelSensor = NULL;
 static PumpHandler *pump = NULL;
 static HeaterHandler *heater = NULL;
 
-static bool PumpWaterBoilerUnit(void);
-static bool StopWaterSupplyBoilerUnit(void);
+static BoilerStatus PumpWaterBoilerUnit(void);
+static BoilerStatus StopWaterSupplyBoilerUnit(void);
 static float GetTemperature(void);
 static float GetPressure(void);
-static float GetLevel(void);
-static bool StartHeating(void);
-static bool StopHeating(void);
+static LevelState GetLevel(void);
+static BoilerStatus StartHeating(void);
+static BoilerStatus StopHeating(void);
 
 static BoilerUnitHandler boilerUnitHandler =
 {
@@ -43,48 +43,56 @@ BoilerUnitHandler *CreateBoilerUnit(TempratureSensorHandler *tempratureSensorObj
     return &boilerUnitHandler;
 }
 
-static bool PumpWaterBoilerUnit(void)
+static BoilerStatus PumpWaterBoilerUnit(void)
 {
     if (levelSensor == NULL || pump == NULL)
     {
-        return false;
+        return BOILER_ERROR_NULL;
     }
 
-      LevelState level = levelSensor->GetLevelSensorValue();
+    LevelState level = levelSensor->GetLevelSensorValue();
 
     if (level == LEVEL_HIGH)
     {
-        ESP_LOGW(TAG, "Tank Full → Stopping Pump");
+        ESP_LOGW(TAG, "Tank Full Stopping Pump");
         pump->PumpOff();
-        return false;
+        return BOILER_OK;
+    }
+
+    if (level == LEVEL_EMPTY)
+    {
+        ESP_LOGW(TAG, "Tank Level is empty");
+        return pump->PumpOn() ? BOILER_OK : BOILER_ERROR_NULL;
+    }
+
+    if (level == LEVEL_INVALID)
+    {
+        ESP_LOGW(TAG, "Tank Level is empty");
+        pump->PumpOff();
+
+        if (heater != NULL)
+        {
+            heater->HeaterOff();
+        }
+
+        return BOILER_ERROR_INVALID_LEVEL;
     }
 
     ESP_LOGI(TAG, "Filling Boiler... Level: %d", level);
 
-    if (pump->PumpOn() == true)
-    {
-        return true;
-    }
-
-    ESP_LOGE(TAG, "Pump Start Failed");
-    return false;
+     return pump->PumpOn() ? BOILER_OK : BOILER_ERROR_NULL;
 }
 
-static bool StopWaterSupplyBoilerUnit(void)
+static BoilerStatus StopWaterSupplyBoilerUnit(void)
 {
     if (pump == NULL)
     {
-        return false;
+        return BOILER_ERROR_NULL;
     }
 
-    if (pump->PumpOff() == true)
-    {
-        ESP_LOGI(TAG, "Pump Stopped");
-        return true;
-    }
+    ESP_LOGI(TAG, "Filling Process Stopped");
 
-    ESP_LOGE(TAG, "Pump Stop Failed");
-    return false;
+    return pump->PumpOff() ? BOILER_OK : BOILER_ERROR_NULL;
 }
 
 static float GetTemperature(void)
@@ -97,34 +105,54 @@ static float GetPressure(void)
     return pressureSensor->GetPressureSensorValue();
 }
 
-static float GetLevel(void)
+static LevelState GetLevel(void)
 {
     return levelSensor->GetLevelSensorValue();
 }
 
-static bool StartHeating(void)
+static BoilerStatus StartHeating(void)
 {
-    if (heater == NULL)
+    if (heater == NULL || levelSensor == NULL)
     {
-        return false;
+        return BOILER_ERROR_NULL;
     }
 
-    float temprature = GetPressure();
+    LevelState level = levelSensor->GetLevelSensorValue();
+
+    if (level == LEVEL_EMPTY || level == LEVEL_INVALID)
+    {
+        heater->HeaterOff();
+        return BOILER_ERROR_DRY_RUN;
+    }
+
+    float temprature = GetTemperature();
     float pressure = GetPressure();
+
+    float pressure_psi = pressure * 0.145038f;
 
     if (temprature > 120.0f)
     {
-        ESP_LOGE(TAG, "Over Temperature! Heater OFF");
         heater->HeaterOff();
-        return false;
+        ESP_LOGW(TAG, "BOILER_ERROR_OVER_TEMP");
+        return BOILER_ERROR_OVER_TEMP;
     }
 
-    ESP_LOGI(TAG, "Heater ON");
+    if (pressure_psi >= 16.0f)
+    {
+        ESP_LOGW(TAG, "BOILER_ERROR_HIGH_PRESSURE");
+        heater->HeaterOff();
+        return BOILER_ERROR_HIGH_PRESSURE;
+    }
 
-    return heater->HeaterOn();
+    if (pressure_psi <= 14.0f)
+    {
+        return heater->HeaterOn() ? BOILER_OK : BOILER_ERROR_NULL;
+    }
+
+    return BOILER_OK;
 }
 
-static bool StopHeating(void)
+static BoilerStatus StopHeating(void)
 {
     if (heater == NULL)
     {

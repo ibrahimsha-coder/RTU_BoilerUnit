@@ -154,7 +154,7 @@ static bool ReadCommand(bool *start)
 
     if (total_read == 0 || strlen(buffer) < 5)
     {
-        ESP_LOGI(TAG, "No command available");
+        ESP_LOGI(TAG, "No command available in TalkBack");
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return true;

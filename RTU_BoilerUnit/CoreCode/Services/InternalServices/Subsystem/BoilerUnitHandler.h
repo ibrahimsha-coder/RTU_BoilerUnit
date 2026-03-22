@@ -4,15 +4,18 @@
 #include <stdbool.h>
 #include <stddef.h> 
 
+#include "LevelSensorDefinitions.h"
+#include "BoilerDefinition.h"
+
 typedef struct BoilerUnitHandler
 {
-    bool (*PumpWaterBoilerUnit)(void);
-    bool (*StopWaterSupplyBoilerUnit)(void);
+    BoilerStatus (*PumpWaterBoilerUnit)(void);
+    BoilerStatus (*StopWaterSupplyBoilerUnit)(void);
     float (*GetTemperature)(void);
     float (*GetPressure)(void);
-    float (*GetLevel)(void);
-    bool (*StartHeating)(void);
-    bool (*StopHeating)(void);
+    LevelState (*GetLevel)(void);
+    BoilerStatus (*StartHeating)(void);
+    BoilerStatus (*StopHeating)(void);
 } BoilerUnitHandler;
 
 #endif//BOILER_UNIT_HANDLER_H

@@ -5,6 +5,7 @@ typedef enum LevelState
 {
     LEVEL_EMPTY,
     LEVEL_LOW,
+    LEVL_MEDIUM,
     LEVEL_HIGH,
     LEVEL_INVALID
 } LevelState;

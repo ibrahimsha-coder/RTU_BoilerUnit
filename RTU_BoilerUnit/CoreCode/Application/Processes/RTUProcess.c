@@ -1,4 +1,3 @@
-
 #include "OS.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
@@ -24,6 +23,9 @@ static BoilerState HandleBoiler(BoilerState state, BoilerSensors *s, int *errorC
 static void StoreToFlash(const FlashRecord *rec);
 static void SendStoredData(void);
 static const char* GetErrorString(int error);
+static const char* GetErrorString(int error);
+static const char* GetStateString(BoilerState state);
+static BoilerError MapBoilerStatusToError(BoilerStatus status);
 static void RTUApplication_task(void *pvParameters);
 
 static RTCProcessHandler rtuHandler =
@@ -60,60 +62,65 @@ static bool Init(void)
 
 static BoilerState HandleBoiler(BoilerState state, BoilerSensors *sensor, int *errorCode)
 {
-    float pressure_psi = sensor->pressure * KPA_TO_PSI;
-
-    if (sensor->pressure == INVALID_PRESSURE || sensor->pressure == OVER_PRESSURE)
+    if (sensor->pressure == 0 || sensor->pressure == 255)
     {
         currentError = ERROR_PRESSURE_SENSOR;
+    }
+
+    if (sensor->temperature == 0 || sensor->temperature == 255)
+    {
+        currentError = ERROR_TEMPERATURE_SENSOR;
+    }
+
+    if (sensor->levelHigh && !sensor->levelLow)
+    {
+        currentError = ERROR_LEVEL_SENSOR;
+    }
+
+    // --- FORCE STOP ON ERROR ---
+    if (currentError != ERROR_NONE)
+    {
+        boiler->StopHeating();
+        boiler->StopWaterSupplyBoilerUnit();
         return BOILER_ERROR;
     }
 
-    if (state == BOILER_IDLE)
+    // --- LEVEL CONTROL ---
+    if (!sensor->levelHigh) // EMPTY or LOW
     {
-        if (sensor->levelLow)
+        BoilerStatus status = boiler->PumpWaterBoilerUnit();
+
+        if (status != BOILER_OK)
         {
-            return BOILER_FILLING;
+            currentError = MapBoilerStatusToError(status);
+            return BOILER_ERROR;
         }
 
-        return BOILER_HEATING;
+        return BOILER_FILLING;
     }
 
-    else if (state == BOILER_FILLING)
-    {
-        boiler->PumpWaterBoilerUnit();
+    // --- HIGH LEVEL ---
+    boiler->StopWaterSupplyBoilerUnit();
 
-        if (sensor->levelHigh)
-        {
-            return BOILER_HEATING;
-        }
-    }
+    float pressure = sensor->pressure;
 
-    else if (state == BOILER_HEATING)
-    {
-        if (pressure_psi < MINIMUM_THRESHOLD_PRESSURE)
-        {
-            boiler->StartHeating();
-        }
-        else if (pressure_psi >= MAXIMUM_THRESHOLD_PRESSURE)
-        {
-            boiler->StopHeating();
-        }
-    }
-
-    else if (state == BOILER_READY)
-    {
-        if (pressure_psi < MINIMUM_THRESHOLD_PRESSURE)
-        {
-            return BOILER_HEATING;
-        }
-    }
-
-    else if (state == BOILER_ERROR)
+    // --- READY STATE (NEW FIX) ---
+    if (pressure >= MAXIMUM_THRESHOLD_PRESSURE) // ≥ 18 PSI
     {
         boiler->StopHeating();
+        return BOILER_READY;
     }
 
-    return state;
+    // --- HEATING ---
+    BoilerStatus status = boiler->StartHeating();
+
+    if (status != BOILER_OK)
+    {
+        currentError = MapBoilerStatusToError(status);
+        return BOILER_ERROR;
+    }
+
+    return BOILER_HEATING;
 }
 
 static void StoreToFlash(const FlashRecord *rec)
@@ -129,11 +136,11 @@ static void StoreToFlash(const FlashRecord *rec)
     nvs_get_i32(handle, FLASH_INDEX_KEY, &index);
 
     char key[16];
-    snprintf(key, sizeof(key), "%s%ld", FLASH_RECORD_PREFIX, index);
+    snprintf(key, sizeof(key), "%s%d", FLASH_RECORD_PREFIX, (int)index);
 
     if (nvs_set_blob(handle, key, rec, sizeof(FlashRecord)) == ESP_OK)
     {
-        ESP_LOGI(TAG, "Stored in Flash [%ld]", index);
+        ESP_LOGI(TAG, "Stored in Flash [%d]", (int)index);
     }
 
     index = (index + 1) % FLASH_MAX_RECORDS;
@@ -208,10 +215,30 @@ static const char* GetErrorString(int error)
     }
 }
 
+static const char* GetStateString(BoilerState state)
+{
+    if (state == BOILER_IDLE) return "IDLE";
+    else if (state == BOILER_FILLING) return "FILLING";
+    else if (state == BOILER_HEATING) return "HEATING";
+    else if (state == BOILER_READY) return "READY";
+    else if (state == BOILER_ERROR) return "ERROR";
+    else return "UNKNOWN";
+}
+
+static BoilerError MapBoilerStatusToError(BoilerStatus status)
+{
+    if (status == BOILER_ERROR_INVALID_LEVEL) return ERROR_LEVEL_SENSOR;
+    else if (status == BOILER_ERROR_DRY_RUN) return ERROR_DRY_RUN;
+    else if (status == BOILER_ERROR_OVER_TEMP) return ERROR_TEMPERATURE_SENSOR;
+    else if (status == BOILER_ERROR_HIGH_PRESSURE) return ERROR_PRESSURE_SENSOR;
+    else return ERROR_NONE;
+}
+
 void RTUApplication_task(void *pvParameters)
 {
     BoilerSensors sensors = {0};
     BoilerState state = BOILER_IDLE;
+    BoilerState prevState = BOILER_IDLE;
 
     bool start = false;
 
@@ -226,14 +253,51 @@ void RTUApplication_task(void *pvParameters)
 
         if (start)
         {
-            sensors.temperature = boiler->GetTemperature();
-            sensors.pressure    = boiler->GetPressure();
-            sensors.level       = boiler->GetLevel();
+             currentError = ERROR_NONE;
 
-            sensors.levelLow  = (sensors.level >= 1);
-            sensors.levelHigh = (sensors.level == 2);
+            // --- RETRY TEMP ---
+            for (int i = 0; i < ERROR_COUNT; i++)
+            {
+                sensors.temperature = boiler->GetTemperature();
+                if (sensors.temperature != 0 && sensors.temperature != 255) break;
+                vTaskDelay(pdMS_TO_TICKS(50));
+                if (i == ERROR_COUNT - 1) currentError = ERROR_TEMPERATURE_SENSOR;
+            }
 
+            // --- RETRY PRESSURE ---
+            for (int i = 0; i < ERROR_COUNT; i++)
+            {
+                sensors.pressure = boiler->GetPressure();
+                if (sensors.pressure != 0 && sensors.pressure != 255) break;
+                vTaskDelay(pdMS_TO_TICKS(50));
+                if (i == ERROR_COUNT - 1) currentError = ERROR_PRESSURE_SENSOR;
+            }
+
+            // --- RETRY LEVEL ---
+            LevelState rawLevel = LEVEL_INVALID;
+
+            for (int i = 0; i < ERROR_COUNT; i++)
+            {
+                rawLevel = boiler->GetLevel();
+                if (rawLevel != LEVEL_INVALID) break;
+                vTaskDelay(pdMS_TO_TICKS(50));
+                if (i == ERROR_COUNT - 1) currentError = ERROR_LEVEL_SENSOR;
+            }
+
+            sensors.level = rawLevel;
+            sensors.levelLow  = (rawLevel == LEVEL_LOW || rawLevel == LEVEL_HIGH);
+            sensors.levelHigh = (rawLevel == LEVEL_HIGH);
+
+            prevState = state;
             state = HandleBoiler(state, &sensors, NULL);
+
+            // --- STATE TRANSITION LOG ---
+            if (prevState != state)
+            {
+                ESP_LOGI(TAG, "STATE CHANGE: %s → %s",
+                         GetStateString(prevState),
+                         GetStateString(state));
+            }
 
             int error = currentError;
 
@@ -257,12 +321,12 @@ void RTUApplication_task(void *pvParameters)
 
             if (wifiHandler && wifiHandler->GetStatus() == WIFI_STATUS_CONNECTED)
             {
-                cloudSendDataFeedBack = cloudHandler->SendData(rec.temperature, rec.pressure, rec.levelLow, rec.levelHigh, rec.heater, rec.pump, rec.state, rec.error);
+                cloudSendDataFeedBack = cloudHandler->SendData(rec.temperature, rec.pressure, sensors.level, rec.levelHigh, rec.heater, rec.pump, rec.state, rec.error);
             }
 
             if (cloudSendDataFeedBack == false)
             {
-                ESP_LOGW(TAG, "Cloud Failed → Store in Flash");
+                ESP_LOGW(TAG, "Cloud Failed, Data Stored in Flash");
                 StoreToFlash(&rec);
             }
             else
@@ -271,7 +335,7 @@ void RTUApplication_task(void *pvParameters)
                 SendStoredData();
             }
 
-            ESP_LOGI(TAG,"Temp: %.2f | Press: %.2f | Level: %.2f | State:%d | Error:%s", rec.temperature, rec.pressure, sensors.level, rec.state, GetErrorString(rec.error));
+            ESP_LOGI(TAG,"Temp: %.2f | Press: %.2f | Level: %d | State:%s | Error:%s", rec.temperature, rec.pressure, sensors.level, GetStateString(rec.state), GetErrorString(rec.error));
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));
