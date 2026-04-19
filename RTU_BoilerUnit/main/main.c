@@ -11,6 +11,7 @@
 #include "Heater.h"
 #include "BoilerUnit.h"
 #include "CloudService.h"
+#include "AWSCloudService.h"
 #include "RTUProcess.h"
 #include "DebugMessage.h"
 
@@ -22,6 +23,7 @@ static PumpHandler *pump = NULL;
 static HeaterHandler *heater = NULL;
 static BoilerUnitHandler *boilerUnit = NULL;
 static CloudServiceHandler *cloud = NULL;
+static AWSCloudServiceHandler *awscloud;
 
 static bool CreateMCAL(void);
 static bool CreatePlatform(void);
@@ -184,11 +186,16 @@ static bool CreateExternalServices(void)
 {
     bool retVal = false;
 
-    cloud = CreateCloudService(espWifi);
+    // cloud = CreateCloudService(espWifi);
 
-    if (cloud != NULL)
+    if (espWifi->Connect("SWEET_HOME", "9993763619") == WifiOk)
     {
-        retVal = true;
+        awscloud = CreateAWSCloudService(espWifi);
+    
+        if (awscloud->Init() == true)
+        {
+            retVal = true;
+        }
     }
 
     return retVal;
@@ -198,7 +205,7 @@ bool CreateProcess(void)
 {
     bool retVal = false;
 
-    if (CreateRTUProcess(espWifi, cloud, boilerUnit) != NULL)
+    if (CreateRTUProcess(espWifi, awscloud, boilerUnit) != NULL)
     {
         retVal = true;
     }

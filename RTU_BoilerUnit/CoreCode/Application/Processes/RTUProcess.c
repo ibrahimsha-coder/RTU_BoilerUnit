@@ -10,7 +10,7 @@ static const char *TAG = "RTU";
 
 static RTCProcessHandler *rtu = NULL;
 static WifiHandler *wifiHandler = NULL;
-static CloudServiceHandler *cloudHandler = NULL;
+static AWSCloudServiceHandler *cloudHandler = NULL;
 static BoilerUnitHandler *boiler = NULL;
 
 static int levelErrorCount = 0;
@@ -33,7 +33,7 @@ static RTCProcessHandler rtuHandler =
     Init
 };
 
-RTCProcessHandler *CreateRTUProcess(WifiHandler *wifiHandlerObject, CloudServiceHandler *cloudHandlerObject, BoilerUnitHandler *boilerObject)
+RTCProcessHandler *CreateRTUProcess(WifiHandler *wifiHandlerObject, AWSCloudServiceHandler *cloudHandlerObject, BoilerUnitHandler *boilerObject)
 {
     if (wifiHandlerObject && cloudHandlerObject && boilerObject)
     {

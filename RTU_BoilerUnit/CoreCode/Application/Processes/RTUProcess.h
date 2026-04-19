@@ -7,7 +7,7 @@
 #include "BoilerDefinition.h"
 
 #include "WifiHandler.h"
-#include "CloudServiceHandler.h"
+#include "AWSCloudServiceHandler.h"
 #include "BoilerUnitHandler.h"
 #include "RTCProcessHandler.h"
 
@@ -29,7 +29,7 @@
 #define FLASH_RECORD_PREFIX  "rec_"
 #define FLASH_MAX_RECORDS    50
 
-RTCProcessHandler *CreateRTUProcess(WifiHandler *wifiHandlerObject, CloudServiceHandler *cloudHandlerObject, BoilerUnitHandler *boilerObject);
+RTCProcessHandler *CreateRTUProcess(WifiHandler *wifiHandlerObject, AWSCloudServiceHandler *cloudHandlerObject, BoilerUnitHandler *boilerObject);
 
 typedef enum BoilerError
 {
